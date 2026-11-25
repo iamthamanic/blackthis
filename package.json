@@ -1,9 +1,9 @@
 {
   "name": "blackthis",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "100 % lokales Offline-Tool zum DSGVO-konformen Schwärzen von CSV-, Excel- und PDF-Dateien (Art. 15 Auskunft) mit Browser-Oberfläche, echter In-Place-PDF-Schwärzung, Maus-Nachschwärzung und deutscher Sprach-KI.",
   "bin": {
-    "blackthis": "./bin/blackthis.js"
+    "blackthis": "bin/blackthis.js"
   },
   "files": [
     "bin/",

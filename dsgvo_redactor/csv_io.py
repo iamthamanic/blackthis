@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import csv
 import io
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# Großzügiges Feldgrößen-Limit für umfangreiche Log-/JSON-/SQL-Zellen (Standard in Python sind nur 128 KB)
+try:
+    csv.field_size_limit(min(sys.maxsize, 64 * 1024 * 1024))
+except OverflowError:
+    csv.field_size_limit(10 * 1024 * 1024)
 
 
 @dataclass
@@ -34,26 +41,68 @@ def decode_csv_bytes(raw: bytes) -> tuple[str, str]:
 
 
 def detect_delimiter(sample_text: str) -> str:
-    """Erkennt das CSV-Trennzeichen zuverlässig – auch bei mehrzeiligen Zellen in Anführungszeichen."""
-    # Erste Zeilen für Sniffer nehmen
-    sample = sample_text[:16384]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters="".join(CANDIDATE_DELIMITERS))
-        if dialect.delimiter in CANDIDATE_DELIMITERS:
-            return dialect.delimiter
-    except csv.Error:
-        pass
+    """Erkennt das CSV-Trennzeichen zuverlässig – auch bei SQL-Queries, JSON & mehrzeiligen Zellen.
 
-    # Fallback: Header-Zeile analysieren
+    Bewertet jedes Kandidaten-Trennzeichen per echtem `csv.reader`-Parse der ersten Zeilen,
+    statt sich blind auf `csv.Sniffer()` zu verlassen (der sich z. B. von SQL-Listen wie
+    `VALUES ('a', 'b', 'c')` in einer einzelnen Zelle auf `,` fehlleiten lässt).
+    """
+    if not sample_text or not sample_text.strip():
+        return ";"
+
+    # Bevorzugte Reihenfolge bei Gleichstand (DACH-Standard: Semikolon vor Komma, Tab, Pipe)
+    tie_priority = {d: len(CANDIDATE_DELIMITERS) - i for i, d in enumerate(CANDIDATE_DELIMITERS)}
+    best_delim: str | None = None
+    best_score: tuple[float, float, int, int] = (-1.0, -1.0, -1, -1)
+
+    for cand in CANDIDATE_DELIMITERS:
+        rows: list[list[str]] = []
+        try:
+            reader = csv.reader(io.StringIO(sample_text, newline=""), delimiter=cand)
+            for row in reader:
+                if row and any(cell.strip() for cell in row):
+                    rows.append(row)
+                    if len(rows) >= 60:
+                        break
+        except csv.Error:
+            continue
+
+        if not rows:
+            continue
+
+        header_cols = len(rows[0])
+        if header_cols <= 1:
+            # Ein Trennzeichen, das nicht einmal die Kopfzeile trennt, darf niemals gewinnen
+            continue
+
+        data_rows = rows[1:]
+        if data_rows:
+            exact_matches = sum(1 for r in data_rows if len(r) == header_cols)
+            near_matches = sum(1 for r in data_rows if len(r) >= header_cols)
+            exact_ratio = exact_matches / len(data_rows)
+            near_ratio = near_matches / len(data_rows)
+        else:
+            exact_ratio = 1.0
+            near_ratio = 1.0
+
+        score = (round(exact_ratio, 4), round(near_ratio, 4), header_cols, tie_priority[cand])
+        if score > best_score:
+            best_score = score
+            best_delim = cand
+
+    if best_delim is not None:
+        return best_delim
+
+    # Fallback für echte 1-Spalten-CSVs
     first_line = sample_text.splitlines()[0] if sample_text.splitlines() else ""
-    best_delim = ";"
-    best_count = -1
+    best_fallback = ";"
+    best_count = 0
     for delim in CANDIDATE_DELIMITERS:
         cnt = first_line.count(delim)
         if cnt > best_count:
             best_count = cnt
-            best_delim = delim
-    return best_delim
+            best_fallback = delim
+    return best_fallback
 
 
 def load_csv_bytes(raw: bytes, delimiter: str | None = None) -> LoadedCSV:

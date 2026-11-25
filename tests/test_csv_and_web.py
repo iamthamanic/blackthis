@@ -528,3 +528,43 @@ def test_pdf_upload_inplace_redaction_and_preview():
         assert meta.get("title", "") == ""
     finally:
         out_doc.close()
+
+
+def test_csv_delimiter_detection_with_sql_queries_and_json_in_last_column():
+    header = "Datum;Aktion;Art;Beschreibung;Tabelle;Datensatz;Bestellung;Rechnung;Kunde;Alte Daten;Neue Daten\r\n"
+
+    # 1. SQL-Abfragen mit zitierten Listen (früher ließ sich csv.Sniffer hier auf ',' fehlleiten -> 1 Spalte!)
+    sql_csv = (
+        header
+        + '01.04.2026 09:17:12;updateUser;Update;Admin wurde aktualisiert;admin;105;;;;;'
+        + '"INSERT INTO hv_log (a, b, c) VALUES (\'Max\', \'Mustermann\', \'Köln\')"\r\n'
+        + '01.04.2026 09:23:54;query;SQL;Abfrage;hv_orders;106;395990;;;;'
+        + '"SELECT id, name, email FROM users WHERE city IN (\'Köln\', \'Berlin\', \'München\')"\r\n'
+        + '01.04.2026 09:28:31;updateUser;Update;Admin wurde aktualisiert;admin;105;;;;;\r\n'
+    )
+    loaded_sql = load_csv_bytes(sql_csv.encode("utf-8-sig"))
+    assert loaded_sql.delimiter == ";"
+    assert len(loaded_sql.headers) == 11
+    assert loaded_sql.headers[0] == "Datum"
+    assert loaded_sql.headers[-1] == "Neue Daten"
+    assert len(loaded_sql.rows) == 3
+    assert "INSERT INTO hv_log" in loaded_sql.rows[0]["Neue Daten"]
+
+    # 2. Komma-CSV mit Semikolons innerhalb von Textzellen bleibt korrekt bei ','
+    comma_csv = 'Date,Name,Note\n2026-04-01,Max,"a;b;c;d;e"\n2026-04-02,Erika,"x;y;z"\n'
+    loaded_comma = load_csv_bytes(comma_csv.encode("utf-8"))
+    assert loaded_comma.delimiter == ","
+    assert loaded_comma.headers == ["Date", "Name", "Note"]
+    assert len(loaded_comma.rows) == 2
+
+    # 3. Tab-getrennte Datei (TSV) bleibt korrekt bei '\t'
+    tsv = "Datum\tAktion\tNeue Daten\n2026-04-01\tQuery\t\"SELECT a, b, c FROM t WHERE x IN ('1', '2', '3')\"\n"
+    loaded_tsv = load_csv_bytes(tsv.encode("utf-8"))
+    assert loaded_tsv.delimiter == "\t"
+    assert loaded_tsv.headers == ["Datum", "Aktion", "Neue Daten"]
+
+    # 4. Header mit Komma in einer Semikolon-CSV (z. B. "Name, Vorname") bleibt korrekt bei ';'
+    mixed_header_csv = 'Datum;"Name, Vorname";Notiz\n01.04.2026;Mustermann;Test\n02.04.2026;Weber;Ok\n'
+    loaded_mixed = load_csv_bytes(mixed_header_csv.encode("utf-8"))
+    assert loaded_mixed.delimiter == ";"
+    assert loaded_mixed.headers == ["Datum", "Name, Vorname", "Notiz"]
