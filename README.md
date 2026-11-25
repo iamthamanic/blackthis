@@ -17,13 +17,16 @@ blackthis
 ```
 
 - **Beim ersten Start** richtet `blackthis` automatisch eine dauerhafte lokale Python-Umgebung in `~/.blackthis/venv` ein und lädt einmalig das deutsche Sprachmodell (`de_core_news_lg`, ~550 MB).
-- **Bei jedem weiteren Start** öffnet sich sofort die lokale Browser-Oberfläche auf `127.0.0.1` (mit automatischer Port-Suche, falls Port `8765` belegt ist) — **100 % offline**.
+- **Automatischer Update-Check:** Beim Start prüft `blackthis` kurz (max. 2 s), ob auf npm eine neuere Version liegt, und fragt interaktiv, ob direkt aktualisiert & neu gestartet werden soll (funktioniert bei `npx blackthis` und globaler Installation; offline wird der Check still übersprungen).
+- **Bei jedem weiteren Start** öffnet sich sofort die lokale Browser-Oberfläche auf `127.0.0.1` (mit automatischer Port-Suche, falls Port `8765` belegt ist) — **Datenverarbeitung bleibt 100 % offline**.
 
 ### Weitere Befehle
 ```bash
 blackthis --port 8799         # Bevorzugten Port setzen
 blackthis --no-open           # Server starten, ohne Browser zu öffnen
 blackthis --setup             # Lokale Umgebung & Sprachmodell manuell einrichten/reparieren
+blackthis --update            # Direkt auf die neueste npm-Version aktualisieren
+blackthis --no-update-check   # Update-Prüfung beim Start überspringen
 blackthis --cli --input datei.csv --vorname Max --nachname Mustermann
 blackthis --cli --input dokument.pdf --vorname Max --nachname Mustermann
 ```

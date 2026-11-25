@@ -4,8 +4,10 @@
 const { spawn, spawnSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
+const https = require("https");
 const os = require("os");
 const path = require("path");
+const readline = require("readline");
 
 const PKG_ROOT = path.resolve(__dirname, "..");
 const PKG_JSON = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8"));
@@ -14,6 +16,9 @@ const HOME_STATE_DIR = path.join(os.homedir(), ".blackthis");
 const HOME_VENV_DIR = path.join(HOME_STATE_DIR, "venv");
 const DEPS_HASH_FILE = path.join(HOME_STATE_DIR, ".deps_hash");
 const IS_WIN = process.platform === "win32";
+const NPM_BIN = IS_WIN ? "npm.cmd" : "npm";
+const NPX_BIN = IS_WIN ? "npx.cmd" : "npx";
+const UPDATE_CHECK_TIMEOUT_MS = 2000;
 
 function venvPythonPath(venvDir) {
   return IS_WIN
@@ -164,6 +169,202 @@ function ensureEnvironment({ forceSetup = false, skipModel = false } = {}) {
   return pyBin;
 }
 
+function parseSemver(ver) {
+  if (!ver || typeof ver !== "string") return null;
+  const clean = ver.trim().replace(/^v/i, "").split("-", 1)[0];
+  const parts = clean.split(".").map((n) => Number.parseInt(n, 10));
+  if (parts.length < 2 || parts.some(Number.isNaN)) return null;
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function isNewerVersion(latest, current) {
+  const a = parseSemver(latest);
+  const b = parseSemver(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+function fetchLatestNpmVersion(pkgName, timeoutMs = UPDATE_CHECK_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (val) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
+
+    const req = https.get(
+      `https://registry.npmjs.org/${encodeURIComponent(pkgName)}/latest`,
+      {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": `${pkgName}/${PKG_JSON.version}`,
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return done(null);
+        }
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+          if (body.length > 262144) {
+            req.destroy();
+            done(null);
+          }
+        });
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(body);
+            done(typeof parsed.version === "string" ? parsed.version : null);
+          } catch {
+            done(null);
+          }
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy();
+      done(null);
+    });
+    req.on("error", () => done(null));
+  });
+}
+
+function askYesNo(question, defaultYes = true) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(question, (answer) => {
+      rl.close();
+      const norm = answer.trim().toLowerCase();
+      if (!norm) return resolve(defaultYes);
+      if (["j", "ja", "y", "yes"].includes(norm)) return resolve(true);
+      if (["n", "nein", "no"].includes(norm)) return resolve(false);
+      resolve(defaultYes);
+    });
+  });
+}
+
+function performUpdateAndRestart(targetVersion, rawArgs) {
+  const pkgName = PKG_JSON.name || "blackthis";
+  const pkgSpec = `${pkgName}@latest`;
+  const forwardedArgs = rawArgs.filter((a) => a !== "--update");
+  const childEnv = { ...process.env, BLACKTHIS_UPDATED: "1" };
+
+  const normalizedRoot = PKG_ROOT.replace(/\\/g, "/");
+  const isNpxCache = normalizedRoot.includes("/_npx/") && normalizedRoot.endsWith(`/node_modules/${pkgName}`);
+  const isLocalDevRepo = fs.existsSync(path.join(PKG_ROOT, ".git"));
+  const isNodeModulesInstall = normalizedRoot.endsWith(`/node_modules/${pkgName}`);
+
+  console.log(`\nAktualisiere ${pkgName} auf v${targetVersion}...`);
+
+  let updatedInPlace = false;
+  if (isNpxCache) {
+    // Aktualisiert direkt den aktuellen npx-Cache-Ordner, sodass auch künftiges 'npx blackthis' aktuell ist
+    const npxCacheDir = path.resolve(PKG_ROOT, "..", "..");
+    const res = runSync(
+      NPM_BIN,
+      ["install", "--prefix", npxCacheDir, "--no-audit", "--no-fund", pkgSpec],
+      { shell: IS_WIN }
+    );
+    updatedInPlace = res.status === 0;
+  } else if (isNodeModulesInstall && !isLocalDevRepo) {
+    // Globale Installation in-place aktualisieren
+    const res = runSync(
+      NPM_BIN,
+      ["install", "-g", "--no-audit", "--no-fund", pkgSpec],
+      { shell: IS_WIN }
+    );
+    updatedInPlace = res.status === 0;
+  }
+
+  let child;
+  if (updatedInPlace) {
+    console.log(`Update auf v${targetVersion} abgeschlossen – starte neu...\n`);
+    child = spawn(process.execPath, [path.join(PKG_ROOT, "bin", "blackthis.js"), ...forwardedArgs], {
+      stdio: "inherit",
+      env: childEnv,
+    });
+  } else {
+    // Fallback (z. B. fehlende Schreibrechte oder lokaler Dev-Ordner): direkt per npx @latest starten
+    console.log(`Starte ${pkgSpec} direkt über npx...\n`);
+    child = spawn(NPX_BIN, ["--yes", pkgSpec, ...forwardedArgs], {
+      stdio: "inherit",
+      env: childEnv,
+      shell: IS_WIN,
+    });
+  }
+
+  const forwardSignal = (sig) => {
+    if (!child.killed) child.kill(sig);
+  };
+  process.on("SIGINT", () => forwardSignal("SIGINT"));
+  process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+  child.on("exit", (code) => {
+    process.exit(code ?? 0);
+  });
+  return true;
+}
+
+async function maybeCheckForUpdates(args) {
+  if (
+    process.env.BLACKTHIS_UPDATED === "1" ||
+    process.env.BLACKTHIS_NO_UPDATE_CHECK === "1" ||
+    args.includes("--no-update-check")
+  ) {
+    return false;
+  }
+
+  const forceUpdate = args.includes("--update");
+  const pkgName = PKG_JSON.name || "blackthis";
+  const latest = await fetchLatestNpmVersion(pkgName);
+
+  if (!latest) {
+    if (forceUpdate) {
+      console.warn("\nHinweis: Konnte npmjs.com nicht erreichen (offline?) – starte aktuelle Version.\n");
+    }
+    return false;
+  }
+
+  if (!isNewerVersion(latest, PKG_JSON.version)) {
+    if (forceUpdate) {
+      console.log(`\n${pkgName} v${PKG_JSON.version} ist bereits die aktuellste Version.\n`);
+    }
+    return false;
+  }
+
+  console.log("");
+  console.log(`⬆ Neue Version verfügbar: ${pkgName} v${latest} (aktuell: v${PKG_JSON.version})`);
+
+  if (forceUpdate) {
+    return performUpdateAndRestart(latest, args);
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.log(`  Update-Hinweis: 'npx ${pkgName}@latest' oder 'npm install -g ${pkgName}@latest'\n`);
+    return false;
+  }
+
+  const shouldUpdate = await askYesNo(`  Jetzt auf v${latest} aktualisieren und neu starten? [J/n] `, true);
+  if (shouldUpdate) {
+    return performUpdateAndRestart(latest, args);
+  }
+  console.log(`  Übersprungen – starte v${PKG_JSON.version}.\n`);
+  return false;
+}
+
 function printHelp() {
   console.log(`
 blackthis v${PKG_JSON.version} – 100 % lokaler DSGVO Schwärzer für CSV, Excel & PDF (Offline)
@@ -175,6 +376,8 @@ Verwendung:
   blackthis --cli [OPTIONEN]    Startet den schnellen Terminal-Modus (CSV, Excel & PDF)
   blackthis --setup             Richtet lokale Python-Umgebung & deutsches Sprachmodell ein/neu ein
   blackthis --no-model          Startet ohne Download des 550-MB-Sprachmodells (nur Regeln)
+  blackthis --update            Aktualisiert direkt auf die neueste Version von npm
+  blackthis --no-update-check   Überspringt die automatische Update-Prüfung beim Start
   blackthis --version           Zeigt die Version an
   blackthis --help              Zeigt diese Hilfe an
 
@@ -184,7 +387,7 @@ Beispiel Terminal-Modus:
 `);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const cliIdx = args.indexOf("--cli");
   const isCliMode = cliIdx !== -1;
@@ -195,6 +398,11 @@ function main() {
   }
   if (!isCliMode && (args.includes("--version") || args.includes("-v"))) {
     console.log(`blackthis v${PKG_JSON.version}`);
+    return;
+  }
+
+  const restarted = await maybeCheckForUpdates(args);
+  if (restarted) {
     return;
   }
 
@@ -217,7 +425,8 @@ function main() {
 
   let pyArgs;
   if (isCliMode) {
-    const forwarded = args.filter((_, i) => i !== cliIdx && args[i] !== "--setup" && args[i] !== "--no-model");
+    const ignored = new Set(["--setup", "--no-model", "--update", "--no-update-check"]);
+    const forwarded = args.filter((a, i) => i !== cliIdx && !ignored.has(a));
     pyArgs = ["-m", "dsgvo_redactor.cli", ...forwarded];
   } else {
     const webArgs = [];
