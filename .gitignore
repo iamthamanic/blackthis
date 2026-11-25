@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+*_geschwaerzt.csv
+*_geschwaerzt.xlsx
+*_geschwaerzt.pdf
+*_pruefbericht.html
+*_audit*.csv
+*_audit*.json
+*.tgz
+node_modules/

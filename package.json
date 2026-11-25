@@ -1,0 +1,54 @@
+{
+  "name": "blackthis",
+  "version": "1.0.0",
+  "description": "100 % lokales Offline-Tool zum DSGVO-konformen Schwärzen von CSV-, Excel- und PDF-Dateien (Art. 15 Auskunft) mit Browser-Oberfläche, echter In-Place-PDF-Schwärzung, Maus-Nachschwärzung und deutscher Sprach-KI.",
+  "bin": {
+    "blackthis": "./bin/blackthis.js"
+  },
+  "files": [
+    "bin/",
+    "dsgvo_redactor/",
+    "!**/__pycache__",
+    "!**/*.pyc",
+    "!**/.DS_Store",
+    "templates/",
+    "static/",
+    "requirements.txt",
+    "redact_csv.py",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node ./bin/blackthis.js",
+    "test": "pytest -v"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "dsgvo",
+    "gdpr",
+    "csv",
+    "excel",
+    "xlsx",
+    "pdf",
+    "redaction",
+    "anonymizer",
+    "privacy",
+    "offline",
+    "spacy",
+    "pymupdf",
+    "german",
+    "blackthis"
+  ],
+  "license": "MIT",
+  "preferGlobal": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamthamanic/blackthis.git"
+  },
+  "homepage": "https://github.com/iamthamanic/blackthis#readme",
+  "bugs": {
+    "url": "https://github.com/iamthamanic/blackthis/issues"
+  }
+}

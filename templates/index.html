@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLACKTHIS – like its a secret from area51</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+  <header>
+    <div>
+      <div class="brand-title-row">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <h1>BLACKTHIS</h1>
+      </div>
+      <div class="brand-subline" aria-label="like its a secret from area51 — approved">
+        <span class="redact-anim-pill">
+          <span class="redact-anim-text">like its a secret from area51</span>
+          <span class="redact-anim-bar" aria-hidden="true"></span>
+        </span>
+        <span class="approved-badge" aria-hidden="true">
+          <span class="approved-box">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none">
+              <path class="approved-check" d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>APPROVED</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- SCHRITT 1: CSV / EXCEL / PDF HOCHLADEN -->
+    <section class="card">
+      <h2><span class="step-num">1</span> CSV-, Excel- oder PDF-Datei auswählen</h2>
+      <div class="dropzone" id="dropzone">
+        <strong>CSV-, Excel- oder PDF-Datei (.csv / .xlsx / .pdf) hier ablegen oder anklicken</strong>
+        <span>Unterstützt CSV, Excel (.xlsx) &amp; Text-PDFs (echte Schwärzung im Original-Layout) · deutsche Umlaute · 100 % lokal</span>
+        <input type="file" id="fileInput" accept=".csv,.txt,.xlsx,.pdf" style="display:none">
+      </div>
+      <div class="file-info" id="fileInfo"></div>
+      <div class="warn-banner" id="pdfScanWarning"></div>
+      <div class="error-box" id="errorBox"></div>
+
+      <div id="columnPickerWrap" style="display:none; margin-top:16px;">
+        <label class="field">Welche Spalten sollen nach sensiblen Daten durchsucht werden?</label>
+        <div class="chip-group" id="columnCheckboxes"></div>
+        <div class="warn-banner" id="piiColWarning"></div>
+        <div class="hint">Textspalten (z. B. „Notiz“) und offensichtliche Personen-Spalten (z. B. Vorname, E-Mail, Telefon, IBAN) werden automatisch vorausgewählt.</div>
+
+        <div id="inspectPreviewWrap" class="preview-table-wrap" style="display:none; margin-top:14px;">
+          <div class="preview-table-head">Vorschau aller Spalten (erste 3 Zeilen inkl. Spaltenkopf):</div>
+          <div class="table-shell">
+            <table class="full-csv-table">
+              <thead id="inspectPreviewHead"></thead>
+              <tbody id="inspectPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCHRITT 2: SCHWÄRZUNGSEINSTELLUNGEN -->
+    <section class="card">
+      <h2><span class="step-num">2</span> Schwärzungseinstellungen</h2>
+
+      <div class="grid-2">
+        <div>
+          <label class="field" for="firstName">Vorname des Antragstellers (Ex-Mitarbeiter)</label>
+          <input type="text" id="firstName" placeholder="z. B. Max">
+          <div class="hint">Wird NICHT geschwärzt (außer wenn ein anderer Nachname folgt).</div>
+        </div>
+        <div>
+          <label class="field" for="lastName">Nachname des Antragstellers (Ex-Mitarbeiter)</label>
+          <input type="text" id="lastName" placeholder="z. B. Mustermann">
+          <div class="hint">Schützt automatisch auch „Herr/Frau Nachname“ und „M. Nachname“.</div>
+        </div>
+        <div>
+          <label class="field" for="replacement">Schwärzungs-Text</label>
+          <input type="text" id="replacement" value="██████" oninput="onReplacementInput(this.value)">
+          <div class="preset-btns">
+            <button type="button" class="btn-mini preset-btn" data-preset="bar" onclick="setReplacement('██████', false)">██████</button>
+            <button type="button" class="btn-mini preset-btn" data-preset="geschwaerzt" onclick="setReplacement('[GESCHWÄRZT]', false)"><strong>[GESCHWÄRZT]</strong></button>
+            <button type="button" class="btn-mini preset-btn" data-preset="secret" onclick="setReplacement('[SECRET]', false)"><strong>[SECRET]</strong></button>
+            <button type="button" class="btn-mini preset-btn" data-preset="typed" onclick="setReplacement('██████', true)">Kategorie ([NAME], [IBAN])</button>
+          </div>
+          <input type="checkbox" id="useTyped" style="display:none">
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="profile-bar">
+        <label class="field" style="margin:0;">Was soll geschwärzt werden?</label>
+        <button type="button" class="btn-mini" onclick="applyProfile('art15')">Profil: Art.-15-Auskunft</button>
+        <button type="button" class="btn-mini" onclick="applyProfile('max')">Profil: Maximal schwärzen</button>
+      </div>
+      <div class="chip-group">
+        <label class="check-chip"><input type="checkbox" id="cat_names" checked> Klarnamen (Dritte)</label>
+        <label class="check-chip"><input type="checkbox" id="cat_addresses" checked> Adressen / Straßen</label>
+        <label class="check-chip"><input type="checkbox" id="cat_house_numbers" checked> Hausnummern</label>
+        <label class="check-chip"><input type="checkbox" id="cat_postal_codes" checked> Postleitzahlen (DE/AT/CH)</label>
+        <label class="check-chip"><input type="checkbox" id="cat_locations" checked> Ortschaften / Städte</label>
+        <label class="check-chip"><input type="checkbox" id="cat_bank" checked> Kontodaten (IBAN/BIC/BLZ)</label>
+        <label class="check-chip"><input type="checkbox" id="cat_job_titles" checked> Job-Position / Beruf</label>
+        <label class="check-chip"><input type="checkbox" id="cat_amounts" checked> Geldbeträge</label>
+        <label class="check-chip"><input type="checkbox" id="cat_phones" checked> Telefonnummern</label>
+        <label class="check-chip"><input type="checkbox" id="cat_emails" checked> E-Mail-Adressen</label>
+        <label class="check-chip"><input type="checkbox" id="cat_websites" checked> Webseiten / URLs</label>
+        <label class="check-chip"><input type="checkbox" id="cat_ip_addresses" checked> IP-Adressen</label>
+        <label class="check-chip"><input type="checkbox" id="cat_birthdates" checked> Geburtsdaten</label>
+        <label class="check-chip"><input type="checkbox" id="cat_license_plates" checked> Kfz-Kennzeichen</label>
+        <label class="check-chip"><input type="checkbox" id="cat_tax_ids" checked> Steuer- / Ausweis-IDs</label>
+        <label class="check-chip optional"><input type="checkbox" id="cat_companies"> Firmennamen (optional)</label>
+      </div>
+
+      <div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:14px; align-items:center;">
+        <label class="check-chip" style="background:#fef3c7; border-color:#f59e0b;">
+          <input type="checkbox" id="redactUncertain" checked>
+          <strong>DSGVO-Sicherheitsmodus:</strong> Unsichere Fälle im Zweifel automatisch schwärzen (gelb markiert)
+        </label>
+        <label class="check-chip">
+          <input type="checkbox" id="useNer" checked>
+          Lokale deutsche Sprach-KI (spaCy) zusätzlich aktivieren
+        </label>
+      </div>
+
+      <div style="margin-top:14px;">
+        <button type="button" class="collapsible-toggle" onclick="toggleAdvanced()">▸ Erweiterte Listen (eigene Ausnahmen / immer schwärzen)</button>
+        <div id="advancedWrap" style="display:none; margin-top:12px;" class="grid-2">
+          <div>
+            <label class="field" for="extraWhitelist">Zusätzliche Ausnahmen (NIEMALS schwärzen)</label>
+            <textarea id="extraWhitelist" rows="2" placeholder="Kommagetrennt, z. B. eigene E-Mail, Telefon, IBAN des Antragstellers, Geburtsname, Kürzel"></textarea>
+          </div>
+          <div>
+            <label class="field" for="extraBlacklist">Zusätzliche Sperrliste (IMMER schwärzen)</label>
+            <textarea id="extraBlacklist" rows="2" placeholder="Kommagetrennt, z. B. bestimmte Kunden- oder Projektnamen"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <button type="button" class="btn-primary" id="scanBtn" onclick="startScan()" disabled>Jetzt lokal scannen &amp; prüfen</button>
+        <button type="button" class="btn-secondary" id="resetBtn" onclick="resetApp()">↺ Zurücksetzen</button>
+      </div>
+
+      <div class="scan-work-panel" id="scanWorkPanel" aria-live="polite">
+        <div class="scan-work-top">
+          <div class="scan-work-brand">
+            <div class="mini-doc-scanner" aria-hidden="true">
+              <div class="mini-doc-line"></div>
+              <div class="mini-doc-line"></div>
+              <div class="mini-doc-line"></div>
+              <div class="mini-doc-line"></div>
+              <div class="mini-doc-beam"></div>
+            </div>
+            <div>
+              <div class="scan-work-title">
+                <span class="scan-live-dot"></span>
+                <span id="workPhaseLabel">Initialisiere lokalen Offline-Scan…</span>
+              </div>
+              <div class="scan-work-sub" id="workDetail">100 % lokal auf deinem Gerät · keine Daten verlassen diesen Rechner</div>
+            </div>
+          </div>
+          <div class="scan-work-pct">
+            <div class="big-pct" id="workPercent">0 %</div>
+            <div class="elapsed" id="workElapsed">00:00.0</div>
+          </div>
+        </div>
+
+        <div class="progress-track">
+          <div class="progress-fill" id="workProgressFill"></div>
+        </div>
+
+        <div class="phase-stepper">
+          <div class="phase-step" id="step_loading"><span class="phase-icon">1</span> Datei einlesen</div>
+          <div class="phase-step" id="step_ner"><span class="phase-icon">2</span> Lokale Sprach-KI</div>
+          <div class="phase-step" id="step_rules"><span class="phase-icon">3</span> Regeln &amp; Schutz</div>
+          <div class="phase-step" id="step_finalizing"><span class="phase-icon">4</span> Vorschau &amp; Export</div>
+        </div>
+
+        <div class="work-telemetry">
+          <span class="tele-pill">Status: <strong id="teleProcessed">Starte…</strong></span>
+          <span class="tele-pill">Bisher erkannt: <strong id="teleRedactions">0 Schwärzungen</strong></span>
+          <span class="tele-pill">Restzeit: <strong id="teleEta">wird berechnet…</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCHRITT 3: PRÜFEN & HERUNTERLADEN -->
+    <section class="card" id="resultsSection">
+      <h2><span class="step-num">3</span> Ergebnis prüfen &amp; herunterladen</h2>
+
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="warn-banner" id="pdfResultWarning" style="margin-top:0; margin-bottom:14px;"></div>
+      <div class="residual-banner" id="residualCheckBox"></div>
+      <div class="cat-pills" id="catPills"></div>
+
+      <div class="export-bar">
+        <button class="btn-primary btn-success" onclick="openExportModal()">⬇ Geschwärzte Version exportieren</button>
+
+        <span class="btn-with-tip">
+          <button class="btn-secondary" onclick="downloadExport('audit-anon')">⬇ Audit ohne Originale (CSV)</button>
+          <span class="info-tip" tabindex="0" aria-label="Info zu Audit ohne Originale">?<span class="info-tip-box"><strong>Datensparsames Protokoll (CSV):</strong> Listet Zeile, Spalte, Status, Kategorie &amp; Regel auf – komplett <strong>ohne</strong> ungeschwärzte Originaldaten. Ideal für Nachweise &amp; Datenschutz-Dokumentation.</span></span>
+        </span>
+
+        <span class="btn-with-tip">
+          <button class="btn-secondary" onclick="downloadExport('report')">🔒 Interner Prüfbericht (HTML)</button>
+          <span class="info-tip info-tip-warn" tabindex="0" aria-label="Info zu Interner Prüfbericht">?<span class="info-tip-box"><strong>Interne Vorher-Nachher-Übersicht (HTML):</strong> Zeigt alle Fundstellen farbig im Original neben der geschwärzten Ausgabe zur Endkontrolle. <strong>Vertraulich – enthält Originaldaten, niemals versenden!</strong></span></span>
+        </span>
+
+        <span class="btn-with-tip">
+          <button class="btn-secondary" onclick="downloadExport('audit')">🔒 Internes Audit-Log (CSV)</button>
+          <span class="info-tip info-tip-warn" tabindex="0" aria-label="Info zu Internes Audit-Log">?<span class="info-tip-box"><strong>Vollständiges internes Prüfprotokoll (CSV):</strong> Enthält zu jeder Stelle Zeile, Spalte, Status, Kategorie, Regel und den ungeschwärzten Originaltext. <strong>Vertraulich – nur für interne Ablage!</strong></span></span>
+        </span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="bulk-bar">
+        <strong style="font-size:13px;" id="bulkBarLabel">Schnell-Korrektur für ganze Datei:</strong>
+        <input type="text" id="bulkWordInput" placeholder="1 oder mehrere Wörter (kommagetrennt, z. B. Wort1, Wort2)">
+        <button class="btn-secondary btn-blue" onclick="bulkWord('redact')">🔒 Überall schwärzen</button>
+        <button class="btn-secondary btn-release-all" onclick="bulkWord('release')">✓ Überall freigeben</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab active" id="tabReview" onclick="setFilter('review')">⚠️ Nur unsichere Fälle</button>
+          <button class="tab" id="tabFindings" onclick="setFilter('findings')">Alle Zellen mit Treffern</button>
+          <button class="tab" id="tabAll" onclick="setFilter('all')">Alle Zeilen</button>
+          <button class="tab" id="tabTable" onclick="setFilter('table')">📊 Alle Spalten (Tabelle)</button>
+          <button class="tab" id="tabPdfPreview" onclick="setFilter('pdf-preview')" style="display:none;">📄 PDF-Vorschau (Layout)</button>
+        </div>
+        <input type="text" id="searchInput" placeholder="In Zeilen / Fundstellen suchen…" style="max-width:280px;" oninput="onSearchInput()">
+      </div>
+
+      <div id="pdfPreviewBar" class="table-mode-bar" style="display:none;">
+        <span class="table-mode-label">Original-PDF Layout-Vorschau:</span>
+        <div class="tabs">
+          <button type="button" class="tab active" id="pdfModeRedacted" onclick="setPdfPreviewMode('redacted')">Geschwärztes PDF</button>
+          <button type="button" class="tab" id="pdfModeSplit" onclick="setPdfPreviewMode('split')">Original vs. Geschwärzt</button>
+        </div>
+        <span class="hint" style="margin:0;">Zeigt exakt das geschwärzte Original-Layout – Änderungen in den Text-Tabs werden hier sofort übernommen.</span>
+      </div>
+
+      <div id="tableModeBar" class="table-mode-bar" style="display:none;">
+        <span class="table-mode-label">Tabellen-Ansicht über alle Spalten:</span>
+        <div class="tabs">
+          <button type="button" class="tab active" id="tblModeRedacted" onclick="setTableViewMode('redacted')">Geschwärzte Ausgabe (Export)</button>
+          <button type="button" class="tab" id="tblModeOriginal" onclick="setTableViewMode('original')">Original (mit Markierungen)</button>
+        </div>
+        <span class="hint" style="margin:0;">Spalten mit 🔒 werden gescannt · alle übrigen Spalten bleiben im Original sichtbar.</span>
+      </div>
+
+      <div class="legend" id="reviewLegend">
+        <strong>Bedienung:</strong> Markierung anklicken zum Umschalten · <strong>Beliebigen Text links mit der Maus markieren</strong> zum nachträglichen Schwärzen.
+        <span class="legend-item"><mark class="hl hl-high">Rot</mark> Sicher geschwärzt</span>
+        <span class="legend-item"><mark class="hl hl-review">Gelb</mark> Unsicher (im Zweifel geschwärzt)</span>
+        <span class="legend-item"><mark class="hl hl-manual-global">Blau</mark> Manuelle Regel überall</span>
+        <span class="legend-item"><mark class="hl hl-manual">Lila</mark> Nur hier geschwärzt</span>
+        <span class="legend-item"><mark class="hl hl-protected">👤 Türkis</mark> Antragsteller (bleibt sichtbar)</span>
+        <span class="legend-item"><mark class="hl hl-released">Grau</mark> Manuell freigegeben</span>
+      </div>
+
+      <div class="table-shell" id="diffTableShell">
+        <table class="review-table">
+          <thead>
+            <tr>
+              <th class="col-meta">Zeile / Info</th>
+              <th class="col-orig">Original (anklicken oder Text mit Maus markieren)</th>
+              <th class="col-red">Geschwärzte Ausgabe (Live-Vorschau)</th>
+            </tr>
+          </thead>
+          <tbody id="reviewBody"></tbody>
+        </table>
+      </div>
+
+      <div class="table-shell" id="fullTableShell" style="display:none;">
+        <table class="full-csv-table">
+          <thead id="fullTableHead"></thead>
+          <tbody id="fullTableBody"></tbody>
+        </table>
+      </div>
+      <div id="pdfPreviewShell" class="pdf-preview-shell" style="display:none;"></div>
+      <div class="load-more-wrap" id="loadMoreWrap">
+        <button type="button" class="btn-secondary" id="loadMoreBtn" onclick="loadMoreRows()">Weitere Zeilen laden</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="selection-popover" id="selectionPopover" role="toolbar" aria-label="Text-Auswahl Aktionen">
+    <button type="button" class="pop-btn pop-local" id="popLocalBtn" onmousedown="event.preventDefault()" onclick="applyPopoverLocal()">🔒 Nur hier schwärzen</button>
+    <button type="button" class="pop-btn pop-all" id="popAllBtn" onmousedown="event.preventDefault()" onclick="applyPopoverBulk('redact')">🔒 Überall schwärzen</button>
+    <button type="button" class="pop-btn pop-release" id="popReleaseBtn" onmousedown="event.preventDefault()" onclick="applyPopoverBulk('release')">✓ Überall freigeben</button>
+  </div>
+
+  <div class="modal-backdrop" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle" onclick="if (event.target === this) closeExportModal()">
+    <div class="export-modal">
+      <div class="export-modal-head">
+        <div>
+          <h3 id="exportModalTitle">Geschwärzte Version exportieren</h3>
+          <p>Wähle das gewünschte Format – alle automatischen &amp; manuellen Schwärzungen sind enthalten.</p>
+        </div>
+        <button type="button" class="modal-close" aria-label="Schließen" onclick="closeExportModal()">×</button>
+      </div>
+      <div class="export-choice-grid">
+        <button type="button" class="export-choice" id="exportChoicePdf" onclick="confirmExport('pdf')">
+          <span class="export-choice-icon">📄</span>
+          <span class="export-choice-title" id="exportPdfTitle">Als PDF (.pdf)</span>
+          <span class="export-choice-desc" id="exportPdfDesc">Druckfertiges DIN-A4-Dokument mit echten schwarzen Schwärzungsbalken – ideal zum Versenden.</span>
+        </button>
+        <button type="button" class="export-choice" onclick="confirmExport('csv')">
+          <span class="export-choice-icon">📊</span>
+          <span class="export-choice-title">Als CSV (.csv)</span>
+          <span class="export-choice-desc" id="exportCsvDesc">Tabellendatei (UTF-8 mit BOM) für Excel, Numbers &amp; weitere Datenverarbeitung.</span>
+        </button>
+        <button type="button" class="export-choice" onclick="confirmExport('xlsx')">
+          <span class="export-choice-icon">📗</span>
+          <span class="export-choice-title">Als Excel (.xlsx)</span>
+          <span class="export-choice-desc" id="exportXlsxDesc">Sauber formatierte Excel-Arbeitsmappe mit fixierter Kopfzeile &amp; optimalen Spaltenbreiten.</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="review-dock" id="reviewDock" role="toolbar" aria-label="Gelbe Prüffälle durchspringen">
+    <button type="button" class="review-dock-count" id="reviewDockCount" onclick="jumpToCurrentReview()" title="Direkt zum aktuellen Prüffall springen">⚠️ Prüffall 1 / 1</button>
+    <button type="button" class="rnav-btn" onclick="stepReview(-1)" title="Vorheriger Prüffall">← Zurück</button>
+    <button type="button" class="rnav-btn rnav-check" onclick="startReviewCheck()" title="Zum 1. Prüffall springen">Check</button>
+    <button type="button" class="rnav-btn" onclick="stepReview(1)" title="Nächster Prüffall">Vor →</button>
+    <button type="button" class="rnav-btn rnav-release" onclick="releaseCurrentReviewEverywhere()" title="Alle identischen Vorkommen dieses Prüffalls in der gesamten CSV freigeben">✓ Alle gleichen freigeben</button>
+    <button type="button" class="review-dock-close" onclick="hideReviewDock()" title="Leiste ausblenden" aria-label="Schließen">×</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+
+</html>

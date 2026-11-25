@@ -1,0 +1,14 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+tests/
+sample_data/
+*.csv
+*.xlsx
+*.pdf
+*_pruefbericht.html
+.DS_Store
+setup_mac.command
+start_ui.command
